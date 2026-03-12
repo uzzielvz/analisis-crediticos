@@ -241,3 +241,58 @@ cd analisis-crediticos
 pip install pandas openpyxl matplotlib scipy statsmodels scikit-learn jupyter
 jupyter notebook notebook/analisis_mora.ipynb
 ```
+
+---
+
+## Celda corregida — Monto vs Mora (filtro $0–$30K)
+
+Reemplaza el contenido completo de la celda de monto con esto:
+
+```python
+from scipy.stats import spearmanr
+
+df_m30 = df[df['monto'] <= 30000].copy()
+en_m30 = df_m30[df_m30['en_mora']==1]
+no_m30 = df_m30[df_m30['en_mora']==0]
+
+r_m, p_m = spearmanr(df_m30['monto'], df_m30['dias_mora'])
+df_m30['seg_monto'] = pd.qcut(df_m30['monto'], q=3,
+                          labels=['Bajo (<P33)','Medio (P33-P66)','Alto (>P66)'])
+medias_m   = df_m30.groupby('seg_monto', observed=True)['dias_mora'].mean().round(1)
+pct_mora_m = df_m30.groupby('seg_monto', observed=True)['en_mora'].mean().mul(100).round(1)
+cnt_m      = df_m30.groupby('seg_monto', observed=True)['dias_mora'].count()
+
+fig, axes = plt.subplots(1,2,figsize=(13,5))
+axes[0].scatter(no_m30['monto'], no_m30['dias_mora'], alpha=0.35, color=GRIS, s=28,
+                label='Sin mora', edgecolors='none')
+axes[0].scatter(en_m30['monto'], en_m30['dias_mora'], alpha=0.50, color=ROJO, s=28,
+                label='En mora',  edgecolors='none')
+z  = np.polyfit(df_m30['monto'], df_m30['dias_mora'], 1)
+xr = np.linspace(df_m30['monto'].min(), df_m30['monto'].max(), 200)
+axes[0].plot(xr, np.poly1d(z)(xr), color=AZUL, lw=2.5, label='Tendencia')
+axes[0].set_title('Figura 4a. Monto vs Dias de mora (hasta $30K)', pad=10)
+axes[0].set_xlabel('Monto prestado (MXN)'); axes[0].set_ylabel('Dias de mora')
+axes[0].xaxis.set_major_formatter(mticker.FuncFormatter(lambda x,_: f'${x/1000:.0f}K'))
+axes[0].legend(fontsize=9)
+stxt = '(*)' if p_m<0.05 else '(n.s.)'
+axes[0].text(0.05,0.92, f'r = {r_m:+.2f}  p={p_m:.3f} {stxt}',
+             transform=axes[0].transAxes, fontsize=10,
+             bbox=dict(boxstyle='round,pad=0.3',facecolor='#EBF5FB',edgecolor=AZUL))
+df_m30.boxplot(column='dias_mora', by='seg_monto', ax=axes[1], patch_artist=True,
+           boxprops=dict(facecolor=AZUL+'33',color=AZUL),
+           medianprops=dict(color=ROJO,lw=2.5),
+           whiskerprops=dict(color=AZUL), capprops=dict(color=AZUL),
+           flierprops=dict(marker='o',color=AZUL,alpha=0.3,markersize=3))
+for i,(seg,val) in enumerate(medias_m.items()):
+    axes[1].text(i+1, val+8, f'media={val:.0f}d\nn={cnt_m[seg]}',
+                 ha='center', fontsize=9, color=AZUL, fontweight='bold')
+axes[1].set_title('Figura 4b. Dias de mora por tercil de monto ($0-$30K)', pad=10)
+axes[1].set_xlabel('Segmento'); axes[1].set_ylabel('Dias de mora')
+plt.suptitle('')
+plt.tight_layout()
+plt.show()
+print(f'n = {len(df_m30)} creditos (monto <= $30K, excluidos {len(df)-len(df_m30)} outliers)')
+print(f'r Spearman = {r_m:+.4f}  p = {p_m:.4f}  {stxt}')
+for seg in medias_m.index:
+    print(f'  {str(seg):22s}: media={medias_m[seg]:.1f}d  {pct_mora_m[seg]:.1f}% en mora')
+```
